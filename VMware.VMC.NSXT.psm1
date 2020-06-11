@@ -1832,7 +1832,29 @@ Function Get-NSXTRouteTable {
                 foreach ($routeEntry in $routeEntries) {
                     $routeEntryResults += $routeEntry
                 }
-                $routeEntryResults | select network,next_hop,admin_distance,route_type | ft
+
+                $routeTableResults = @()
+                foreach ($routeEntryResult in $routeEntryResults | Sort-Object -Property network) {
+
+                    switch ($($routeEntryResult.route_type)) {
+                        "b" { $routeType = "BGP" }
+                        "t0c" { $routeType = "T0 Connected" }
+                        "t0n" { $routeType = "T0 NAT" }
+                        "t1s" { $routeType = "Transit Subnet" }
+                        "t1c" { $routeType = "T1 Connected" }
+                        "t0s" { $routeType = "T0 Static" }
+                        default { $routeType = "Unknown" }
+                    }
+
+                    $tmp = [pscustomobject][ordered] @{
+                        network = $routeEntryResult.network;
+                        next_hop = $routeEntryResult.next_hop;
+                        admin_distance = $routeEntryResult.admin_distance;
+                        route_type = $routeType;
+                    }
+                    $routeTableResults+=$tmp
+                }
+                $routeTableResults | ft
             }
         }
     }
