@@ -32,6 +32,7 @@ Function Connect-NSXTProxy {
         $sddc = $sddcService.get($orgId,$sddcId)
         if($sddc.resource_config.nsxt) {
             $nsxtProxyURL = $sddc.resource_config.nsx_api_public_endpoint_url
+            $sddcVersion = $sddc.resource_config.sddc_manifest.vmc_internal_version
         } else {
             Write-Host -ForegroundColor Red "This is not an NSX-T based SDDC"
             break
@@ -1792,8 +1793,14 @@ Function Get-NSXTRouteTable {
 
     If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection found, please use Connect-NSXTProxy" } Else {
         $method = "GET"
-        $routeTableURL = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-0s/vmc/routing-table?enforcement_point_path=/infra/sites/default/enforcement-points/vmc-enforcementpoint"
-
+        
+        # Check for SDDC version and account for API changes in NSX-T 2.5 introduced from VMC M9
+        if ([int]$global:nsxtProxyConnection.sddcVersion.split(".")[1] -ge 9){
+            $routeTableURL = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-0s/vmc/routing-table?enforcement_point_path=/infra/sites/default/enforcement-points/vmc-enforcementpoint"
+        }else{
+            $routeTableURL = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-0s/vmc/routing-table?enforcement_point_path=/infra/deployment-zones/default/enforcement-points/vmc-enforcementpoint"
+        }
+        
         if($RouteSource) {
             $routeTableURL = $routeTableURL + "&route_source=$RouteSource"
         }
