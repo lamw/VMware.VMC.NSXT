@@ -3104,3 +3104,154 @@ Function Remove-NSXTNatRule {
         }
     }
 }
+
+Function Get-NSXTT0Stats {
+    Param(
+        [Switch]$NonPrettyPrint,
+        [Switch]$Troubleshoot
+    )
+
+    If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection found, please use Connect-NSXTProxy" } Else {
+        Write-Host "Retrieving Stats ...`n"
+
+        ## Retrieve all Tier-0 interfaces
+        $method = "GET"
+        $t0InterfaceUrl = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-0s/vmc/locale-services/default/interfaces"
+
+        if($Troubleshoot) {
+            Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$t0InterfaceUrl`n"
+        }
+
+        try {
+            if($PSVersionTable.PSEdition -eq "Core") {
+                $requests = Invoke-WebRequest -Uri $t0InterfaceUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+            } else {
+                $requests = Invoke-WebRequest -Uri $t0InterfaceUrl -Method $method -Headers $global:nsxtProxyConnection.headers
+            }
+        } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                break
+            } else {
+                Write-Error "Error in retrieving NSX-T T0 Interfaces"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+        }
+
+        if($requests.StatusCode -eq 200) {
+            $t0Interfaces = ($requests.Content | ConvertFrom-Json).results.id
+        }
+
+        ## Retrieve Edge Cluster
+        $edgeClusterURL = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/sites/default/enforcement-points/vmc-enforcementpoint/edge-clusters"
+
+        if($Troubleshoot) {
+            Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$edgeClusterURL`n"
+        }
+
+        try {
+            if($PSVersionTable.PSEdition -eq "Core") {
+                $requests = Invoke-WebRequest -Uri $edgeClusterURL -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+            } else {
+                $requests = Invoke-WebRequest -Uri $edgeClusterURL -Method $method -Headers $global:nsxtProxyConnection.headers
+            }
+        } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                break
+            } else {
+                Write-Error "Error in retrieving NSX-T Edge Cluster"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+        }
+
+        if($requests.StatusCode -eq 200) {
+            $edgeClusterId = ($requests.Content | ConvertFrom-Json).results.id
+        }
+
+        # Retrieve the two Edge Nodes within Edge Cluster
+        $edgeClusterNodeURL = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/sites/default/enforcement-points/vmc-enforcementpoint/edge-clusters/$edgeClusterId/edge-nodes"
+
+        if($Troubleshoot) {
+            Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$edgeClusterNodeURL`n"
+        }
+
+        try {
+            if($PSVersionTable.PSEdition -eq "Core") {
+                $requests = Invoke-WebRequest -Uri $edgeClusterNodeURL -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+            } else {
+                $requests = Invoke-WebRequest -Uri $edgeClusterNodeURL -Method $method -Headers $global:nsxtProxyConnection.headers
+            }
+        } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                break
+            } else {
+                Write-Error "Error in retrieving NSX-T Edge Nodes"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+        }
+
+        if($requests.StatusCode -eq 200) {
+            $edgeNodes = (($requests.Content | ConvertFrom-Json).results).id
+        }
+
+        ## Iterate through both Edges since we can't tell which is the active edge and retrieve stats for each Tier-1 interface.
+        ## Each interface has -0 and -1 entry, so the logic below will simply aggregate the TX/RX stats
+        $interfaceStats = @{}
+        foreach ($edgeNode in $edgeNodes) {
+            $edgeNodePath = "/infra/sites/default/enforcement-points/vmc-enforcementpoint/edge-clusters/$edgeClusterId/edge-nodes/$edgeNode"
+
+            foreach ($interface in $t0Interfaces) {
+                $tmpUrl = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-0s/vmc/locale-services/default/interfaces/${interface}/statistics?enforcement_point_path=/infra/sites/default/enforcement-points/vmc-enforcementpoint&edge_path=${edgeNodePath}"
+
+                if($Troubleshoot) {
+                    Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$tmpUrl`n"
+                }
+
+                $interfaceName = $interface.Substring(0, $interface.Length - 2)
+                if($interfaceStats[$interfaceName]) {
+                    $tmpStats = ((Invoke-WebRequest -Uri $tmpUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck).Content | ConvertFrom-Json).per_node_statistics
+                    $currentStats = $interfaceStats[$interfaceName]
+
+                    $tmp = [pscustomobject][ordered] @{
+                        rx_total_bytes = $currentStats.rx_total_bytes + $tmpStats.rx.total_bytes;
+                        rx_total_packets = $currentStats.rx_total_packets + $tmpStats.rx.total_packets;
+                        rx_dropped_packets = $currentStats.rx_dropped_packets + $tmpStats.rx.dropped_packets;
+                        tx_total_bytes =  $currentStats.tx_total_bytes + $tmpStats.tx.total_bytes;
+                        tx_total_packets = $currentStats.tx_total_packets + $tmpStats.tx.total_packets;
+                        tx_dropped_packets = $currentStats.tx_dropped_packets + $tmpStats.tx.dropped_packets;
+                    }
+
+                    $interfaceStats[$interfaceName] = $tmp
+                } else {
+                    $tmpStats = ((Invoke-WebRequest -Uri $tmpUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck).Content | ConvertFrom-Json).per_node_statistics
+
+                    $tmp = [pscustomobject][ordered] @{
+                        rx_total_bytes = $tmpStats.rx.total_bytes;
+                        rx_total_packets = $tmpStats.rx.total_packets;
+                        rx_dropped_packets = $tmpStats.rx.dropped_packets;
+                        tx_total_bytes =  $tmpStats.tx.total_bytes;
+                        tx_total_packets = $tmpStats.tx.total_packets;
+                        tx_dropped_packets = $tmpStats.tx.dropped_packets;
+                    }
+
+                    $interfaceStats[$interfaceName] = $tmp
+                }
+            }
+        }
+
+        # NonPrettyPrint can be used for data extraction versus default to individual table output for readability
+        if($NonPrettyPrint) {
+            $interfaceStats
+        } else {
+            foreach ($key in $interfaceStats.keys) {
+                Write-Host -ForegroundColor Green "Statistics for ${key}:"
+                $interfaceStats.${key} | ft
+            }
+        }
+    }
+}
