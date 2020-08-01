@@ -80,6 +80,7 @@ Function Get-NSXTSegment {
 #>
     Param (
         [Parameter(Mandatory=$False)]$Name,
+        [Parameter(Mandatory=$False)][Boolean]$SuppressConsoleOutput=$false,
         [Switch]$Troubleshoot
     )
 
@@ -92,7 +93,9 @@ Function Get-NSXTSegment {
         }
 
         try {
-            Write-Host "Retrievig NSX-T Segments ..."
+            if(!$SuppressConsoleOutput) {
+                Write-Host "Retrievig NSX-T Segments ..."
+            }
             if($PSVersionTable.PSEdition -eq "Core") {
                 $requests = Invoke-WebRequest -Uri $segmentsURL -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
             } else {
@@ -1788,6 +1791,7 @@ Function Get-NSXTRouteTable {
 #>
     Param (
         [Parameter(Mandatory=$False)][ValidateSet("BGP","CONNECTED","STATIC")]$RouteSource,
+        [Parameter(Mandatory=$False)][Boolean]$SuppressConsoleOutput=$false,
         [Switch]$Troubleshoot
     )
 
@@ -1827,7 +1831,9 @@ Function Get-NSXTRouteTable {
         }
 
         if($requests.StatusCode -eq 200) {
-            Write-Host "Successfully retrieved NSX-T Routing Table`n"
+            if(!$SuppressConsoleOutput) {
+                Write-Host "Successfully retrieved NSX-T Routing Table`n"
+            }
             $routeTables = ($requests.Content | ConvertFrom-Json).results
 
             foreach ($routeTable in $routeTables) {
@@ -2580,7 +2586,7 @@ Twitter:       @lamw
         $policyBaseVPNURL = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-0s/vmc/locale-services/default/l3vpns"
 
         if($Troubleshoot) {
-            Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$routeBaseVPNURL`n"
+            Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$policyBaseVPNURL`n"
         }
 
         try {
@@ -3252,6 +3258,361 @@ Function Get-NSXTT0Stats {
                 Write-Host -ForegroundColor Green "Statistics for ${key}:"
                 $interfaceStats.${key} | ft
             }
+        }
+    }
+}
+
+Function Get-NSXTLinkedVpc {
+    Param(
+        [Switch]$Troubleshoot
+    )
+
+    If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection found, please use Connect-NSXTProxy" } Else {
+        $method = "GET"
+        $vpcUrl = ($global:nsxtProxyConnection.Server).replace("/sks-nsxt-manager","") + "/cloud-service/api/v1/infra/linked-vpcs"
+
+        if($Troubleshoot) {
+            Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$vpcUrl`n"
+        }
+
+        try {
+            if($PSVersionTable.PSEdition -eq "Core") {
+                $requests = Invoke-WebRequest -Uri $vpcUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+            } else {
+                $requests = Invoke-WebRequest -Uri $vpcUrl -Method $method -Headers $global:nsxtProxyConnection.headers
+            }
+        } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                break
+            } else {
+                Write-Error "Error in retrieving linked VPC information"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+        }
+
+        if($requests.StatusCode -eq 200) {
+            ($requests.Content | ConvertFrom-Json).results
+        }
+    }
+}
+
+Function Get-NSXTL2VPN {
+    Param(
+        [Switch]$Troubleshoot
+    )
+
+    If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection found, please use Connect-NSXTProxy" } Else {
+        $method = "GET"
+        $l2vpnUrl = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-0s/vmc/locale-services/default/l2vpn-services"
+
+        if($Troubleshoot) {
+            Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$l2vpnUrl`n"
+        }
+
+        try {
+            if($PSVersionTable.PSEdition -eq "Core") {
+                $requests = Invoke-WebRequest -Uri $l2vpnUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+            } else {
+                $requests = Invoke-WebRequest -Uri $l2vpnUrl -Method $method -Headers $global:nsxtProxyConnection.headers
+            }
+        } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                break
+            } else {
+                Write-Error "Error in retrieving linked VPC information"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+        }
+
+        if($requests.StatusCode -eq 200) {
+            ($requests.Content | ConvertFrom-Json).results | Select display_name, id, path
+        }
+    }
+}
+
+Function Get-NSXTPortMirror {
+    Param(
+        [Switch]$Troubleshoot
+    )
+
+    If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection found, please use Connect-NSXTProxy" } Else {
+        $method = "GET"
+        $portMirrorUrl = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/port-mirroring-profiles"
+
+        if($Troubleshoot) {
+            Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$portMirrorUrl`n"
+        }
+
+        try {
+            if($PSVersionTable.PSEdition -eq "Core") {
+                $requests = Invoke-WebRequest -Uri $portMirrorUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+            } else {
+                $requests = Invoke-WebRequest -Uri $portMirrorUrl -Method $method -Headers $global:nsxtProxyConnection.headers
+            }
+        } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                break
+            } else {
+                Write-Error "Error in retrieving NSX-T Port Mirror Profiles"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+        }
+
+        if($requests.StatusCode -eq 200) {
+            ($requests.Content | ConvertFrom-Json).results
+        }
+    }
+}
+
+Function Get-NSXTIPFIXCollector {
+    Param(
+        [Switch]$Troubleshoot
+    )
+
+    If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection found, please use Connect-NSXTProxy" } Else {
+        $method = "GET"
+        $ipfixUrl = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/ipfix-collector-profiles"
+
+        if($Troubleshoot) {
+            Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$ipfixUrl`n"
+        }
+
+        try {
+            if($PSVersionTable.PSEdition -eq "Core") {
+                $requests = Invoke-WebRequest -Uri $ipfixUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+            } else {
+                $requests = Invoke-WebRequest -Uri $ipfixUrl -Method $method -Headers $global:nsxtProxyConnection.headers
+            }
+        } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                break
+            } else {
+                Write-Error "Error in retrieving NSX-T IPFIX Collector Profiles"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+        }
+
+        if($requests.StatusCode -eq 200) {
+            ($requests.Content | ConvertFrom-Json).results
+        }
+    }
+}
+
+Function Get-NSXTDirectConnectVIF {
+    Param(
+        [Switch]$Troubleshoot
+    )
+
+    If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection found, please use Connect-NSXTProxy" } Else {
+        $method = "GET"
+        $dxVifUrl = ($global:nsxtProxyConnection.Server).replace("/sks-nsxt-manager","") + "/cloud-service/api/v1/infra/direct-connect/vifs"
+
+        if($Troubleshoot) {
+            Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$dxVifUrl`n"
+        }
+
+        try {
+            if($PSVersionTable.PSEdition -eq "Core") {
+                $requests = Invoke-WebRequest -Uri $dxVifUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+            } else {
+                $requests = Invoke-WebRequest -Uri $dxVifUrl -Method $method -Headers $global:nsxtProxyConnection.headers
+            }
+        } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                break
+            } else {
+                Write-Error "Error in retrieving NSX-T Direct Connect VIFs"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+        }
+
+        if($requests.StatusCode -eq 200) {
+            ($requests.Content | ConvertFrom-Json).results
+        }
+    }
+}
+
+Function Get-NSXTVifPerHost {
+    Param(
+        [Switch]$Troubleshoot
+    )
+
+    If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection found, please use Connect-NSXTProxy" } Else {
+        $method = "GET"
+        $vifUrl = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/realized-state/enforcement-points/vmc-enforcementpoint/vifs"
+
+        if($Troubleshoot) {
+            Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$vifUrl`n"
+        }
+
+        try {
+            if($PSVersionTable.PSEdition -eq "Core") {
+                $requests = Invoke-WebRequest -Uri $vifUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+            } else {
+                $requests = Invoke-WebRequest -Uri $vifUrl -Method $method -Headers $global:nsxtProxyConnection.headers
+            }
+        } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                break
+            } else {
+                Write-Error "Error in retrieving NSX-T VIFs"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+        }
+
+        if($requests.StatusCode -eq 200) {
+            $vifs = ($requests.Content | ConvertFrom-Json).results
+
+            $vifToHostMapping = @{}
+            foreach ($vif in $vifs) {
+                if($vifToHostMapping[$vif.host_id]) {
+                    $vifToHostMapping[$vif.host_id] += 1
+                } else {
+                    $vifToHostMapping[$vif.host_id] = 1
+                }
+            }
+        }
+
+        return $vifToHostMapping
+    }
+}
+
+Function Get-NSXTVM {
+    Param(
+        [Switch]$Troubleshoot
+    )
+
+    If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection found, please use Connect-NSXTProxy" } Else {
+        $method = "GET"
+        $vmUrl = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/realized-state/virtual-machines?enforcement_point_path=/infra/sites/default/enforcement-points/vmc-enforcementpoint"
+
+        if($Troubleshoot) {
+            Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$vmUrl`n"
+        }
+
+        try {
+            if($PSVersionTable.PSEdition -eq "Core") {
+                $requests = Invoke-WebRequest -Uri $vmUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+            } else {
+                $requests = Invoke-WebRequest -Uri $vmUrl -Method $method -Headers $global:nsxtProxyConnection.headers
+            }
+        } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                break
+            } else {
+                Write-Error "Error in retrieving ARP entries for Segment ID ${Id}"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+        }
+
+        if($requests.StatusCode -eq 200) {
+            $vms = ($requests.Content | ConvertFrom-Json).results
+
+            $vmResult = @()
+            foreach ($vm in $vms) {
+                $tmp = [pscustomobject][ordered] @{
+                    "Name" = $vm.display_name;
+                    "Id" = $vm.external_id;
+                    "Tags" = $vm.tags;
+                }
+                $vmResult+=$tmp
+            }
+            $vmResult
+        }
+    }
+}
+
+Function Get-NSXTSegmentPort {
+    Param(
+        [Parameter(Mandatory=$false)][String]$Id,
+        [Switch]$Troubleshoot
+    )
+
+    If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection found, please use Connect-NSXTProxy" } Else {
+        $method = "GET"
+        $segmentPortUrl = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-1s/cgw/segments/${Id}/ports"
+
+        if($Troubleshoot) {
+            Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$segmentPortUrl`n"
+        }
+
+        try {
+            if($PSVersionTable.PSEdition -eq "Core") {
+                $requests = Invoke-WebRequest -Uri $segmentPortUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+            } else {
+                $requests = Invoke-WebRequest -Uri $segmentPortUrl -Method $method -Headers $global:nsxtProxyConnection.headers
+            }
+        } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                break
+            } else {
+                Write-Error "Error in retrieving NSX-T ports for Segment ID ${Id}"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+        }
+
+        if($requests.StatusCode -eq 200) {
+            ($requests.Content | ConvertFrom-Json).results
+        }
+    }
+}
+
+Function Get-NSXTGroupMember {
+    Param(
+        [Parameter(Mandatory=$false)][String]$Id,
+        [Parameter(Mandatory=$true)][ValidateSet("MGW","CGW")][String]$GatewayType,
+        [Parameter(Mandatory=$true)][ValidateSet("VM","IP")][String]$MemberType,
+        [Switch]$Troubleshoot
+    )
+
+    If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection found, please use Connect-NSXTProxy" } Else {
+        $method = "GET"
+
+        if($MemberType -eq "VM") {
+            $memberUrl = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/domains/$($GatewayType.toLower())/groups/${Id}/members/virtual-machines"
+        } else {
+            $memberUrl = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/domains/$($GatewayType.toLower())/groups/${Id}/members/ip-addresses"
+        }
+
+        if($Troubleshoot) {
+            Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$memberUrl`n"
+        }
+
+        try {
+            if($PSVersionTable.PSEdition -eq "Core") {
+                $requests = Invoke-WebRequest -Uri $memberUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+            } else {
+                $requests = Invoke-WebRequest -Uri $memberUrl -Method $method -Headers $global:nsxtProxyConnection.headers
+            }
+        } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                break
+            } else {
+                Write-Error "Error in retrieving NSX-T members from Group ${Id}"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+        }
+
+        if($requests.StatusCode -eq 200) {
+            ($requests.Content | ConvertFrom-Json).results
         }
     }
 }
