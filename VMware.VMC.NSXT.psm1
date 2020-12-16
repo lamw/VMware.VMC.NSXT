@@ -54,6 +54,7 @@ Function Connect-NSXTProxy {
     $global:nsxtProxyConnection = new-object PSObject -Property @{
         'Server' = $nsxtProxyURL
         'headers' = $headers
+        'sddcVersion' = $sddcVersion        
     }
     $global:nsxtProxyConnection
 }
