@@ -12,7 +12,7 @@
 RootModule = 'VMware.VMC.NSXT.psm1'
 
 # Version number of this module.
-ModuleVersion = '1.0.5'
+ModuleVersion = '1.0.6'
 
 # Supported PSEditions
 # CompatiblePSEditions = @()
@@ -38,7 +38,7 @@ PowerShellVersion = '6.0'
 RequiredModules = @('VMware.VimAutomation.Vmc')
 
 # Functions to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no functions to export.
-FunctionsToExport = 'Connect-NSXTProxy','Get-NSXTSegment','New-NSXTSegment','Set-NSXTSegment','Remove-NSXTSegment','Get-NSXTFirewall','New-NSXTFirewall','Remove-NSXTFirewall','Get-NSXTGroup','New-NSXTGroup','Remove-NSXTGroup','Get-NSXTServiceDefinition','Remove-NSXTServiceDefinition','New-NSXTServiceDefinition','New-NSXTDistFirewallSection','Get-NSXTDistFirewallSection','Remove-NSXTDistFirewallSection','Get-NSXTDistFirewall','New-NSXTDistFirewall','Remove-NSXTDistFirewall','Get-NSXTRouteTable','Get-NSXTOverviewInfo','Get-NSXTInfraScope','Get-NSXTInfraGroup','New-NSXTRouteBasedVPN','Get-NSXTRouteBasedVPN','Remove-NSXTRouteBasedVPN','New-NSXTPolicyBasedVPN','Get-NSXTPolicyBasedVPN','Remove-NSXTPolicyBasedVPN','Get-NSXTDNS','Set-NSXTDNS','Get-NSXTPublicIP','New-NSXTPublicIP','Remove-NSXTPublicIP','Get-NSXTNatRule','New-NSXTNatRule','Remove-NSXTNatRule','Get-NSXTT0Stats','Get-NSXTLinkedVpc','Get-NSXTL2VPN','Get-NSXTPortMirror','Get-NSXTIPFIXCollector','Get-NSXTDirectConnectVIF','Get-NSXTVifPerHost','Get-NSXTVM','Get-NSXTSegmentPort','Get-NSXTGroupMember'
+FunctionsToExport = 'Connect-NSXTProxy','Get-NSXTSegment','New-NSXTSegment','Set-NSXTSegment','Remove-NSXTSegment','Get-NSXTFirewall','New-NSXTFirewall','Remove-NSXTFirewall','Get-NSXTGroup','New-NSXTGroup','Remove-NSXTGroup','Get-NSXTServiceDefinition','Remove-NSXTServiceDefinition','New-NSXTServiceDefinition','New-NSXTDistFirewallSection','Get-NSXTDistFirewallSection','Remove-NSXTDistFirewallSection','Get-NSXTDistFirewall','New-NSXTDistFirewall','Remove-NSXTDistFirewall','Get-NSXTRouteTable','Get-NSXTOverviewInfo','Get-NSXTInfraScope','Get-NSXTInfraGroup','New-NSXTRouteBasedVPN','Get-NSXTRouteBasedVPN','Remove-NSXTRouteBasedVPN','New-NSXTPolicyBasedVPN','Get-NSXTPolicyBasedVPN','Remove-NSXTPolicyBasedVPN','Get-NSXTDNS','Set-NSXTDNS','Get-NSXTPublicIP','New-NSXTPublicIP','Remove-NSXTPublicIP','Get-NSXTNatRule','New-NSXTNatRule','Remove-NSXTNatRule','Get-NSXTT0Stats','Get-NSXTLinkedVpc','Get-NSXTL2VPN','Get-NSXTPortMirror','Get-NSXTIPFIXCollector','Get-NSXTDirectConnectVIF','Get-NSXTVifPerHost','Get-NSXTVM','Get-NSXTSegmentPort','Get-NSXTGroupMember','Get-NSXTSegmentStatsbyT1'
 # Cmdlets to export from this module, for best performance, do not use wildcards and do not delete the entry, use an empty array if there are no cmdlets to export.
 CmdletsToExport = @()
 

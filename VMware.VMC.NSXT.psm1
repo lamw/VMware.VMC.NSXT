@@ -3617,3 +3617,203 @@ Function Get-NSXTGroupMember {
         }
     }
 }
+
+Function Get-NSXTSegmentStatsbyT1 {
+    <#
+        .NOTES
+        ===========================================================================
+        Created by:    Romain Decker
+        Date:          03/24/2021
+        Organization:  VMware
+        Blog:          https://cloudmaniac.net
+        Twitter:       @woueb
+        ===========================================================================
+
+        .SYNOPSIS
+            Returns the total bandwidth segment statistics for all segments connected to a given Tier-1 Gateway.
+        .DESCRIPTION
+            This cmdlet retrieves bandwidth statistics (East-West and North-South) for all connected segments for a given NSX-T Tier-1 Gateway.
+        .EXAMPLE
+            Get-NSXTSegmentStatsbyT1 -Tier1Gateway "Compute Gateway"
+    #>
+    Param(
+        [Parameter(Mandatory=$true)][String]$Tier1Gateway,
+        [Switch]$Troubleshoot
+    )
+
+    If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection found, please use Connect-NSXTProxy" } Else {
+        Write-Host -NoNewline -ForegroundColor White "`nRetrieving Bandwidth Statistics for all segments connected to "
+        Write-Host -NoNewline -ForegroundColor Green $Tier1Gateway
+        Write-Host -NoNewline -ForegroundColor White " Tier-1 Gateway...`n"
+
+        ## The flow is not the same if the Tier-1 is the VMC default (Compute Gateway) or a different one
+        If ($Tier1Gateway -eq "Compute Gateway")
+        {
+            ## Retrieve all segments connected to the Tier-1 Gateway
+            $method = "GET"
+            $segmentsUrl = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-1s/cgw/segments"
+
+            if($Troubleshoot) {
+                Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$segmentsUrl`n"
+            }
+
+            try {
+                if($PSVersionTable.PSEdition -eq "Core") {
+                    $requests = Invoke-WebRequest -Uri $segmentsUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+                } else {
+                    $requests = Invoke-WebRequest -Uri $segmentsUrl -Method $method -Headers $global:nsxtProxyConnection.headers
+                }
+            } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                    break
+                } else {
+                    Write-Error "Error in retrieving segments under Tier-1 gateway"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+            }
+
+            if($requests.StatusCode -eq 200) {
+                $segments = (($requests.Content | ConvertFrom-Json).results).id
+            }
+
+            $RxTotalBytes = 0
+            $TxTotalBytes = 0
+
+            foreach ($segmentId in $segments) {
+                $tmpUrl = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-1s/cgw/segments/$segmentId/statistics?enforcement_point_path=/infra/sites/default/enforcement-points/vmc-enforcementpoint"
+                
+                if($Troubleshoot) {
+                    Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$tmpUrl`n"
+                }
+
+                try {
+                    if($PSVersionTable.PSEdition -eq "Core") {
+                        $requests = Invoke-WebRequest -Uri $tmpUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+                    } else {
+                        $requests = Invoke-WebRequest -Uri $tmpUrl -Method $method -Headers $global:nsxtProxyConnection.headers
+                    }
+                } catch {
+                    if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                        Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                        break
+                    } else {
+                        Write-Error "Error in retrieving segment statistics"
+                        Write-Error "`n($_.Exception.Message)`n"
+                        break
+                    }
+                }
+                
+                if($requests.StatusCode -eq 200) {
+                    $RxTotalBytes += ($requests.Content | ConvertFrom-Json).rx_bytes.total
+                    $TxTotalBytes += ($requests.Content | ConvertFrom-Json).tx_bytes.total
+                }
+            }
+
+            Write-Host "Total rx_bytes (includes East-West and North-South traffic) for all segments attached to $Tier1Gateway : $RxTotalBytes"
+            Write-Host "Total tx_bytes (includes East-West and North-South traffic) for all segments attached to $Tier1Gateway : $TxTotalBytes"
+            
+        } else {
+
+            ## Retrieve the Tier-1 Gateway Id if the concerned Tier-1 is not the (default) Compute Gateway
+            $method = "GET"
+            $t1Url = $global:nsxtProxyConnection.Server + "/policy/api/v1/search?query=resource_type:Tier1%20AND%20display_name:" + "$Tier1Gateway"
+
+            if($Troubleshoot) {
+                Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$t1Url`n"
+            }
+
+            try {
+                if($PSVersionTable.PSEdition -eq "Core") {
+                    $requests = Invoke-WebRequest -Uri $t1Url -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+                } else {
+                    $requests = Invoke-WebRequest -Uri $t1Url -Method $method -Headers $global:nsxtProxyConnection.headers
+                }
+            } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                    break
+                } else {
+                    Write-Error "Error in retrieving NSX-T Tier-1 ID"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+            }
+
+            if($requests.StatusCode -eq 200) {
+                if(($requests.Content | ConvertFrom-Json).result_count -eq 0) {
+                    Write-Host -ForegroundColor Red "`nThe $Tier1Gateway NSX-T Tier-1 Gateway does not exist.`n"
+                    break
+                } else {
+                    $tier1id = ($requests.Content | ConvertFrom-Json).results.id
+                }   
+            }
+
+            ## Retrieve all segments connected to the Tier-1 Gateway
+            $segmentsUrl = $global:nsxtProxyConnection.Server + "/policy/api/v1/search?query=resource_type:Segment AND connectivity_path:`"/infra/tier-1s/" + "$tier1id" + "`""
+
+            if($Troubleshoot) {
+                Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$segmentsUrl`n"
+            }
+
+            try {
+                if($PSVersionTable.PSEdition -eq "Core") {
+                    $requests = Invoke-WebRequest -Uri $segmentsUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+                } else {
+                    $requests = Invoke-WebRequest -Uri $segmentsUrl -Method $method -Headers $global:nsxtProxyConnection.headers
+                }
+            } catch {
+                if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                    Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                    break
+                } else {
+                    Write-Error "Error in retrieving segments under Tier-1 gateway"
+                    Write-Error "`n($_.Exception.Message)`n"
+                    break
+                }
+            }
+
+            if($requests.StatusCode -eq 200) {
+                $segments = (($requests.Content | ConvertFrom-Json).results).id
+            }
+
+            $RxTotalBytes = 0
+            $TxTotalBytes = 0
+
+            foreach ($segmentId in $segments) {
+                $tmpUrl = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/segments/$segmentId/statistics?enforcement_point_path=/infra/sites/default/enforcement-points/vmc-enforcementpoint"
+                
+                if($Troubleshoot) {
+                    Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$tmpUrl`n"
+                }
+
+                try {
+                    if($PSVersionTable.PSEdition -eq "Core") {
+                        $requests = Invoke-WebRequest -Uri $tmpUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+                    } else {
+                        $requests = Invoke-WebRequest -Uri $tmpUrl -Method $method -Headers $global:nsxtProxyConnection.headers
+                    }
+                } catch {
+                    if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                        Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                        break
+                    } else {
+                        Write-Error "Error in retrieving segment statistics under Tier-1 gateway"
+                        Write-Error "`n($_.Exception.Message)`n"
+                        break
+                    }
+                }
+                
+                if($requests.StatusCode -eq 200) {
+                    $RxTotalBytes += ($requests.Content | ConvertFrom-Json).rx_bytes.total
+                    $TxTotalBytes += ($requests.Content | ConvertFrom-Json).tx_bytes.total
+                }
+                
+            }
+
+            Write-Host "Total rx_bytes (includes East-West and North-South traffic) for all segments attached to $Tier1Gateway : $RxTotalBytes"
+            Write-Host "Total tx_bytes (includes East-West and North-South traffic) for all segments attached to $Tier1Gateway : $TxTotalBytes"
+        }
+    }
+}
