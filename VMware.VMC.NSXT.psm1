@@ -1803,7 +1803,7 @@ Function Get-NSXTRouteTable {
         if ([int]$global:nsxtProxyConnection.sddcVersion.split(".")[1] -ge 9){
             $routeTableURL = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-0s/vmc/routing-table?enforcement_point_path=/infra/sites/default/enforcement-points/vmc-enforcementpoint"
         }else{
-            $routeTableURL = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-0s/vmc/routing-table?enforcement_point_path=/infra/deployment-zones/default/enforcement-points/vmc-enforcementpoint"
+            $routeTableURL = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-0s/vmc/routing-table?enforcement_point_path=/infra/tier-0s/vmc/routing-table?enforcement_point_path=/infra/sites/default/enforcement-points/vmc-enforcementpoint"
         }
         
         if($RouteSource) {
