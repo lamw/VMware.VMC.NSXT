@@ -1655,7 +1655,7 @@ Function New-NSXTDistFirewall {
             if($serviceName -eq "ANY") {
                 $services = @("ANY")
             } else {
-                $tmp = "/infra/services/$serviceName"
+                $tmp = (Get-NSXTServiceDefinition -Name "$serviceName").Path
                 $services+=$tmp
             }
         }
