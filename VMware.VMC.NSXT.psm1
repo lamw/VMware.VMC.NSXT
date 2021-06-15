@@ -831,13 +831,16 @@ Function Get-NSXTGroup {
 
     If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection  found, please use Connect-NSXTProxy" } Else {
         $method = "GET"
-        $edgeFirewallGroupsURL = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/domains/$($GatewayType.toLower())/groups"
+        $edgeFirewallGroupsURL = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/domains/$($GatewayType.toLower())/groups?page_size=1000"
 
         if($Troubleshoot) {
             Write-Host -ForegroundColor cyan "`n[DEBUG] - $method`n$edgeFirewallGroupsURL`n"
         }
 
         try {
+            if(!$SuppressConsoleOutput) {
+                Write-Host "Retrieving NSX-T Groups ..."
+            }
             if($PSVersionTable.PSEdition -eq "Core") {
                 $requests = Invoke-WebRequest -Uri $edgeFirewallGroupsURL -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
             } else {
@@ -855,14 +858,55 @@ Function Get-NSXTGroup {
         }
 
         if($requests.StatusCode -eq 200) {
-            $groups = ($requests.Content | ConvertFrom-Json).results
+            $baseEdgeFirewallGroupsURL = $edgeFirewallGroupsURL
+            $totalGroupsCount = ($requests.Content | ConvertFrom-Json).result_count
+
+            if($Troubleshoot) {
+                Write-Host "Group count: $totalGroupsCount"
+            }
+
+            $totalGroups = ($requests.Content | ConvertFrom-Json).results
+            $seenGroups = $totalGroups.count
+
+            if($Troubleshoot) {
+                Write-Host -ForegroundColor cyan "`n[DEBUG] $edgeFirewallGroupsURL (currentCount = $seenGroups)"
+            }
+
+            while ($seenGroups -lt $totalGroupsCount) {
+                $groupsURL = $baseEdgeFirewallGroupsURL + "&cursor=$(($requests.Content | ConvertFrom-Json).cursor)"
+                try {
+                    if($PSVersionTable.PSEdition -eq "Core") {
+                        $requests = Invoke-WebRequest -Uri $groupsURL -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+                    } else {
+                        $requests = Invoke-WebRequest -Uri $groupsURL -Method $method -Headers $global:nsxtProxyConnection.headers
+                    }
+                } catch {
+                    if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                        Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                        break
+                    } else {
+                        Write-Error "Error in retrieving NSX-T Groups"
+                        Write-Error "`n($_.Exception.Message)`n"
+                        break
+                    }
+                }
+
+                $groups = ($requests.Content | ConvertFrom-Json).results
+                $totalGroups += $groups
+                $seenGroups += $groups.count
+
+                if($Troubleshoot) {
+                    Write-Host -ForegroundColor cyan "`n[DEBUG] $groupsURL (currentCount = $seenGroups)"
+                }
+
+            }
 
             if ($PSBoundParameters.ContainsKey("Name")){
-                $groups = $groups | where {$_.display_name -eq $Name}
+                $totalGroups = $totalGroups | where {$_.display_name -eq $Name}
             }
 
             $results = @()
-            foreach ($group in $groups) {
+            foreach ($group in $totalGroups) {
                 if($group.tags.tag -eq $null) {
                     $groupType = "USER_DEFINED"
                 } else { $groupType = $group.tags.tag }
