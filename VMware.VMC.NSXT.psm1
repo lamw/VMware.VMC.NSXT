@@ -791,7 +791,7 @@ Function Remove-NSXTFirewall {
                 Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
                 break
             } else {
-                Write-Error "Error in creating new NSX-T Firewall Rule"
+                Write-Error "Error in removing NSX-T Firewall Rule"
                 Write-Error "`n($_.Exception.Message)`n"
                 break
             }
@@ -1077,7 +1077,7 @@ Function Remove-NSXTGroup {
                 Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
                 break
             } else {
-                Write-Error "Error in creating new NSX-T Group"
+                Write-Error "Error in removing NSX-T Group"
                 Write-Error "`n($_.Exception.Message)`n"
                 break
             }
