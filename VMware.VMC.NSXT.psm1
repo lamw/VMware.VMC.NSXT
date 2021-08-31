@@ -24,20 +24,7 @@ Function Connect-NSXTProxy {
         [Parameter(Mandatory=$true)][String]$SDDCName
     )
 
-    If (-Not $global:DefaultVMCServers.IsConnected) { Write-error "No valid VMC Connection found, please use the Connect-VMC to connect"; break } Else {
-        $sddcService = Get-VmcService "com.vmware.vmc.orgs.sddcs"
-        $orgService = Get-VmcService "com.vmware.vmc.orgs"
-        $orgId = ($orgService.list() | where {$_.display_name -eq $OrgName}).Id
-        $sddcId = (Get-VmcSddc -Name $SDDCName).Id
-        $sddc = $sddcService.get($orgId,$sddcId)
-        if($sddc.resource_config.nsxt) {
-            $nsxtProxyURL = $sddc.resource_config.nsx_api_public_endpoint_url
-            $sddcVersion = $sddc.resource_config.sddc_manifest.vmc_internal_version
-        } else {
-            Write-Host -ForegroundColor Red "This is not an NSX-T based SDDC"
-            break
-        }
-    }
+    If (-Not $global:DefaultVMCServers.IsConnected) { Write-error "No valid VMC Connection found, please use the Connect-VMC to connect"; break }
 
     $results = Invoke-WebRequest -Uri "https://console.cloud.vmware.com/csp/gateway/am/api/auth/api-tokens/authorize" -Method POST -Headers @{accept='application/json'} -Body "refresh_token=$RefreshToken"
     if($results.StatusCode -ne 200) {
@@ -51,10 +38,69 @@ Function Connect-NSXTProxy {
         "Content-Type"="application/json"
         "Accept"="application/json"
     }
+
+    # Retrieve OrgID
+    $results = Invoke-Webrequest -uri https://vmc.vmware.com/vmc/api/orgs -Method Get -headers $headers
+    if($results.StatusCode -ne 200) {
+        Write-Host -ForegroundColor Red "Failed to retrieve Org list."
+        break
+    }
+
+    $resultsJson = $results | ConvertFrom-Json
+    $orgId = $NULL
+    foreach ($org in $resultsJson) {
+        if ( $org.display_name -eq $OrgName ){
+            $orgId = $org.id
+            break
+        }
+    }
+
+    if ($NULL -eq $orgId) {
+        Write-Host "Could not find org named", $OrgName
+        break
+    }
+
+    # Retrieve SDDC ID
+    $results = Invoke-Webrequest -uri https://vmc.vmware.com/vmc/api/orgs/${orgid}/sddcs -Method Get -headers $headers
+    if($results.StatusCode -ne 200) {
+        Write-Host -ForegroundColor Red "Failed to retrieve SDDC list."
+        break
+    }
+
+    $sddcId = $NULL
+    $resultsJson = $results | ConvertFrom-Json
+    foreach ($sddc in $resultsJson) {
+        if ( $sddc.name -eq $SDDCName ){
+            $sddcId = $sddc.id
+            break
+        }
+    }
+
+    if ($NULL -eq $sddcId ) {
+        Write-Host "Could not find sddc named", $SDDCName
+        break
+    }
+
+    # Retrieve SDDC details to populate NSX proxy and SDDC version variables
+    $results = Invoke-Webrequest -uri https://vmc.vmware.com/vmc/api/orgs/${orgid}/sddcs/${sddcid} -Method Get -headers $headers
+    if($results.StatusCode -ne 200) {
+        Write-Host -ForegroundColor Red "Failed to retrieve SDDC details."
+        break
+    }
+
+    $resultsJson = $results | ConvertFrom-Json
+    if ($resultsJson.resource_config.nsxt) {
+        $nsxtProxyURL = $resultsJson.resource_config.nsx_api_public_endpoint_url
+        $sddcVersion = (Get-VmcSddc -name $sddcname).version
+    } else {
+        Write-Host -ForegroundColor Red "This is not an NSX-T based SDDC"
+        break
+    }
+
     $global:nsxtProxyConnection = new-object PSObject -Property @{
         'Server' = $nsxtProxyURL
         'headers' = $headers
-        'sddcVersion' = $sddcVersion        
+        'sddcVersion' = $sddcVersion
     }
     $global:nsxtProxyConnection
 }
