@@ -91,7 +91,7 @@ Function Connect-NSXTProxy {
     $resultsJson = $results | ConvertFrom-Json
     if ($resultsJson.resource_config.nsxt) {
         $nsxtProxyURL = $resultsJson.resource_config.nsx_api_public_endpoint_url
-        $sddcVersion = (Get-VmcSddc -name $sddcname).version
+        $sddcVersion = $resultsJson.resource_config.sddc_manifest.vmc_internal_version
     } else {
         Write-Host -ForegroundColor Red "This is not an NSX-T based SDDC"
         break
