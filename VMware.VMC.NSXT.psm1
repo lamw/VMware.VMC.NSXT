@@ -31,7 +31,7 @@ Function Connect-NSXTProxy {
         Write-Host -ForegroundColor Red "Failed to retrieve Access Token, please ensure your VMC Refresh Token is valid and try again"
         break
     }
-    $accessToken = ($results | ConvertFrom-Json).access_token
+    $accessToken = ($results | ConvertFrom-Json -AsHashtable).access_token
 
     $headers = @{
         "csp-auth-token"="$accessToken"
@@ -46,7 +46,7 @@ Function Connect-NSXTProxy {
         break
     }
 
-    $resultsJson = $results | ConvertFrom-Json
+    $resultsJson = $results | ConvertFrom-Json -AsHashtable
     $orgId = $NULL
     foreach ($org in $resultsJson) {
         if ( $org.display_name -eq $OrgName ){
@@ -68,7 +68,7 @@ Function Connect-NSXTProxy {
     }
 
     $sddcId = $NULL
-    $resultsJson = $results | ConvertFrom-Json
+    $resultsJson = $results | ConvertFrom-Json -AsHashtable
     foreach ($sddc in $resultsJson) {
         if ( $sddc.name -eq $SDDCName ){
             $sddcId = $sddc.id
@@ -88,7 +88,7 @@ Function Connect-NSXTProxy {
         break
     }
 
-    $resultsJson = $results | ConvertFrom-Json
+    $resultsJson = $results | ConvertFrom-Json -AsHashtable
     if ($resultsJson.resource_config.nsxt) {
         $nsxtProxyURL = $resultsJson.resource_config.nsx_api_public_endpoint_url
         $sddcVersion = $resultsJson.resource_config.sddc_manifest.vmc_internal_version
@@ -141,7 +141,7 @@ Function Get-NSXTSegment {
 
         try {
             if(!$SuppressConsoleOutput) {
-                Write-Host "Retrieving NSX-T Segments ..."
+                Write-Host "Retrieving NSX-T Segments from CGW T1 ..."
             }
             if($PSVersionTable.PSEdition -eq "Core") {
                 $requests = Invoke-WebRequest -Uri $segmentsURL -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
@@ -153,7 +153,7 @@ Function Get-NSXTSegment {
                 Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
                 break
             } else {
-                Write-Error "Error in retrieving NSX-T Segments"
+                Write-Error "Error in retrieving initial NSX-T Segments from T1 CGW"
                 Write-Error "`n($_.Exception.Message)`n"
                 break
             }
@@ -161,12 +161,12 @@ Function Get-NSXTSegment {
 
         if($requests.StatusCode -eq 200) {
             $baseSegmentsURL = $segmentsURL
-            $totalSegmentCount = ($requests.Content | ConvertFrom-Json).result_count
+            $totalSegmentCount = ($requests.Content | ConvertFrom-Json -AsHashtable).result_count
 
             if($Troubleshoot) {
                 Write-Host -ForegroundColor cyan "`n[DEBUG] totalSegmentCount = $totalSegmentCount"
             }
-            $totalSegments = ($requests.Content | ConvertFrom-Json).results
+            $totalSegments = ($requests.Content | ConvertFrom-Json -AsHashtable).results
             $seenSegments = $totalSegments.count
 
             if($Troubleshoot) {
@@ -174,7 +174,7 @@ Function Get-NSXTSegment {
             }
 
             while ( $seenSegments -lt $totalSegmentCount) {
-                $segmentsURL = $baseSegmentsURL + "&cursor=$(($requests.Content | ConvertFrom-Json).cursor)"
+                $segmentsURL = $baseSegmentsURL + "&cursor=$(($requests.Content | ConvertFrom-Json -AsHashtable).cursor)"
 
                 try {
                     if($PSVersionTable.PSEdition -eq "Core") {
@@ -187,12 +187,12 @@ Function Get-NSXTSegment {
                         Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
                         break
                     } else {
-                        Write-Error "Error in retrieving NSX-T Segments"
+                        Write-Error "Error in retrieving NSX-T Segments from T1 CGW"
                         Write-Error "`n($_.Exception.Message)`n"
                         break
                     }
                 }
-                $segments = ($requests.Content | ConvertFrom-Json).results
+                $segments = ($requests.Content | ConvertFrom-Json -AsHashtable).results
                 $totalSegments += $segments
                 $seenSegments += $segments.count
 
@@ -216,7 +216,8 @@ Function Get-NSXTSegment {
 
                 $tmp = [pscustomobject] @{
                     Name = $segment.display_name;
-                    ID = $segment.Id;
+                    ID = $segment.id;
+                    T1Name = "cgw";
                     TYPE = $type;
                     Network = $network;
                     Gateway = $gateway;
@@ -224,9 +225,103 @@ Function Get-NSXTSegment {
                 }
                 $results+=$tmp
             }
-            $results
+        }
+
+        $segmentsURL = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/segments?page_size=100"
+
+        if($Troubleshoot) {
+            Write-Host -ForegroundColor cyan "`n[DEBUG] - $METHOD`n$segmentsURL`n"
+        }
+
+        try {
+            if(!$SuppressConsoleOutput) {
+                Write-Host "Retrieving NSX-T Segments from other T1 ..."
+            }
+            if($PSVersionTable.PSEdition -eq "Core") {
+                $requests = Invoke-WebRequest -Uri $segmentsURL -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+            } else {
+                $requests = Invoke-WebRequest -Uri $segmentsURL -Method $method -Headers $global:nsxtProxyConnection.headers
+            }
+        } catch {
+            if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                break
+            } else {
+                Write-Error "Error in retrieving initial NSX-T Segments from other T1"
+                Write-Error "`n($_.Exception.Message)`n"
+                break
+            }
+        }
+
+        if($requests.StatusCode -eq 200) {
+            $baseSegmentsURL = $segmentsURL
+            $totalSegmentCount = ($requests.Content | ConvertFrom-Json -AsHashtable).result_count
+
+            if($Troubleshoot) {
+                Write-Host -ForegroundColor cyan "`n[DEBUG] totalSegmentCount = $totalSegmentCount"
+            }
+            $totalSegments = ($requests.Content | ConvertFrom-Json -AsHashtable).results
+            $seenSegments = $totalSegments.count
+
+            if($Troubleshoot) {
+                Write-Host -ForegroundColor cyan "`n[DEBUG] $segmentsURL (currentCount = $seenSegments)"
+            }
+
+            while ( $seenSegments -lt $totalSegmentCount) {
+                $segmentsURL = $baseSegmentsURL + "&cursor=$(($requests.Content | ConvertFrom-Json -AsHashtable).cursor)"
+
+                try {
+                    if($PSVersionTable.PSEdition -eq "Core") {
+                        $requests = Invoke-WebRequest -Uri $segmentsURL -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
+                    } else {
+                        $requests = Invoke-WebRequest -Uri $segmentsURL -Method $method -Headers $global:nsxtProxyConnection.headers
+                    }
+                } catch {
+                    if($_.Exception.Response.StatusCode -eq "Unauthorized") {
+                        Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
+                        break
+                    } else {
+                        Write-Error "Error in retrieving NSX-T Segments from other T1"
+                        Write-Error "`n($_.Exception.Message)`n"
+                        break
+                    }
+                }
+                $segments = ($requests.Content | ConvertFrom-Json -AsHashtable).results
+                $totalSegments += $segments
+                $seenSegments += $segments.count
+
+                if($Troubleshoot) {
+                    Write-Host -ForegroundColor cyan "`n[DEBUG] $segmentsURL (currentCount = $seenSegments)"
+                }
+            }
+
+            if ($PSBoundParameters.ContainsKey("Name")){
+                $totalSegments = $totalSegments | where {$_.display_name -eq $Name}
+            }
+
+            foreach ($segment in $totalSegments) {
+
+                $subnets = $segment.subnets
+                $network = $subnets.network
+                $gateway = $subnets.gateway_address
+                $dhcpRange = $subnets.dhcp_ranges
+                $type = $segment.type
+                $ignore, $t1name = $segment.connectivity_path -split "/infra/tier-1s/"
+
+                $tmp = [pscustomobject] @{
+                    Name = $segment.display_name;
+                    ID = $segment.id;
+                    T1Name = $t1name;
+                    TYPE = $type;
+                    Network = $network;
+                    Gateway = $gateway;
+                    DHCPRange = $dhcpRange;
+                }
+                $results+=$tmp
+            }
         }
     }
+    $results
 }
 
 Function New-NSXTSegment {
@@ -325,7 +420,7 @@ Function New-NSXTSegment {
 
         if($requests.StatusCode -eq 200) {
             Write-Host "Successfully created new NSX-T Segment $Name"
-            ($requests.Content | ConvertFrom-Json) | select display_name, id
+            ($requests.Content | ConvertFrom-Json -AsHashtable) | select display_name, id
         }
     }
 }
@@ -359,7 +454,7 @@ Function Set-NSXTSegment {
     )
 
     If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection found, please use Connect-NSXTProxy" } Else {
-        $SegmentId = (Get-NSXTSegment -Name $Name).Id
+        $SegmentId = (Get-NSXTSegment -Name $Name).id
 
         if($Disconnected) {
             $type = "DISCONNECTED"
@@ -417,7 +512,7 @@ Function Set-NSXTSegment {
 
         if($requests.StatusCode -eq 200) {
             Write-Host "Successfully updated NSX-T Segment $Name"
-            ($requests.Content | ConvertFrom-Json) | select display_name, id
+            ($requests.Content | ConvertFrom-Json -AsHashtable) | select display_name, id
         }
     }
 }
@@ -528,7 +623,7 @@ Function Get-NSXTFirewall {
         }
 
         if($requests.StatusCode -eq 200) {
-            $rules = ($requests.Content | ConvertFrom-Json).rules
+            $rules = ($requests.Content | ConvertFrom-Json -AsHashtable).rules
 
             if ($PSBoundParameters.ContainsKey("Name")){
                 $rules = $rules | where {$_.display_name -eq $Name}
@@ -557,7 +652,7 @@ Function Get-NSXTFirewall {
                             Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
                             break
                         }
-                        $group = ($requests.Content | ConvertFrom-Json)
+                        $group = ($requests.Content | ConvertFrom-Json -AsHashtable)
                         $source += $group.display_name
                     }
                 }
@@ -583,7 +678,7 @@ Function Get-NSXTFirewall {
                             Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
                             break
                         }
-                        $group = ($requests.Content | ConvertFrom-Json)
+                        $group = ($requests.Content | ConvertFrom-Json -AsHashtable)
                         $destination += $group.display_name
                     }
                 }
@@ -609,7 +704,7 @@ Function Get-NSXTFirewall {
                             Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
                             break
                         }
-                        $group = ($requests.Content | ConvertFrom-Json)
+                        $group = ($requests.Content | ConvertFrom-Json -AsHashtable)
                         $service += $group.display_name
                     }
                 }
@@ -631,7 +726,7 @@ Function Get-NSXTFirewall {
                         Write-Host -ForegroundColor Red "`nThe NSX-T Proxy session is no longer valid, please re-run the Connect-NSXTProxy cmdlet to retrieve a new token`n"
                         break
                     }
-                    $scope = ($requests.Content | ConvertFrom-Json)
+                    $scope = ($requests.Content | ConvertFrom-Json -AsHashtable)
                     $scopes += $scope.display_name
                 }
 
@@ -789,7 +884,7 @@ Function New-NSXTFirewall {
 
         if($requests.StatusCode -eq 200) {
             Write-Host "Successfully created new NSX-T Firewall Rule $Name"
-            ($requests.Content | ConvertFrom-Json) | select display_name, id
+            ($requests.Content | ConvertFrom-Json -AsHashtable) | select display_name, id
         }
     }
 }
@@ -905,13 +1000,13 @@ Function Get-NSXTGroup {
 
         if($requests.StatusCode -eq 200) {
             $baseEdgeFirewallGroupsURL = $edgeFirewallGroupsURL
-            $totalGroupsCount = ($requests.Content | ConvertFrom-Json).result_count
+            $totalGroupsCount = ($requests.Content | ConvertFrom-Json -AsHashtable).result_count
 
             if($Troubleshoot) {
                 Write-Host "Group count: $totalGroupsCount"
             }
 
-            $totalGroups = ($requests.Content | ConvertFrom-Json).results
+            $totalGroups = ($requests.Content | ConvertFrom-Json -AsHashtable).results
             $seenGroups = $totalGroups.count
 
             if($Troubleshoot) {
@@ -919,7 +1014,7 @@ Function Get-NSXTGroup {
             }
 
             while ($seenGroups -lt $totalGroupsCount) {
-                $groupsURL = $baseEdgeFirewallGroupsURL + "&cursor=$(($requests.Content | ConvertFrom-Json).cursor)"
+                $groupsURL = $baseEdgeFirewallGroupsURL + "&cursor=$(($requests.Content | ConvertFrom-Json -AsHashtable).cursor)"
                 try {
                     if($PSVersionTable.PSEdition -eq "Core") {
                         $requests = Invoke-WebRequest -Uri $groupsURL -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck
@@ -937,7 +1032,7 @@ Function Get-NSXTGroup {
                     }
                 }
 
-                $groups = ($requests.Content | ConvertFrom-Json).results
+                $groups = ($requests.Content | ConvertFrom-Json -AsHashtable).results
                 $totalGroups += $groups
                 $seenGroups += $groups.count
 
@@ -1075,7 +1170,7 @@ Function New-NSXTGroup {
 
         if($requests.StatusCode -eq 200) {
             Write-Host "Successfully created new NSX-T Group $Name"
-            ($requests.Content | ConvertFrom-Json) | select display_name, id
+            ($requests.Content | ConvertFrom-Json -AsHashtable) | select display_name, id
         }
     }
 }
@@ -1186,7 +1281,7 @@ Function Get-NSXTServiceDefinition {
         }
 
         if($requests.StatusCode -eq 200) {
-            $services = ($requests.Content | ConvertFrom-Json).results
+            $services = ($requests.Content | ConvertFrom-Json -AsHashtable).results
 
             if ($PSBoundParameters.ContainsKey("Name")){
                 $services = $services | where {$_.display_name -eq $Name}
@@ -1336,7 +1431,7 @@ Function New-NSXTServiceDefinition {
 
         if($requests.StatusCode -eq 200) {
             Write-Host "Successfully created new NSX-T Service $Name"
-            ($requests.Content | ConvertFrom-Json) | select display_name, id
+            ($requests.Content | ConvertFrom-Json -AsHashtable) | select display_name, id
         }
     }
 }
@@ -1401,7 +1496,7 @@ Function New-NSXTDistFirewallSection {
 
         if($requests.StatusCode -eq 200) {
             Write-Host "Successfully created new NSX-T Distributed Firewall Section $Section"
-            ($requests.Content | ConvertFrom-Json) | select display_name, id
+            ($requests.Content | ConvertFrom-Json -AsHashtable) | select display_name, id
         }
     }
 }
@@ -1455,7 +1550,7 @@ Function Get-NSXTDistFirewallSection {
         }
 
         if($requests.StatusCode -eq 200) {
-            $sections = ($requests.Content | ConvertFrom-Json).results
+            $sections = ($requests.Content | ConvertFrom-Json -AsHashtable).results
 
             if ($PSBoundParameters.ContainsKey("Name")){
                 $sections = $sections | where {$_.display_name -eq $Name}
@@ -1583,7 +1678,7 @@ Function Get-NSXTDistFirewall {
         }
 
         if($requests.StatusCode -eq 200) {
-            $rules = ($requests.Content | ConvertFrom-Json).communication_entries
+            $rules = ($requests.Content | ConvertFrom-Json -AsHashtable).communication_entries
 
             $results = @()
             foreach ($rule in $rules | Sort-Object -Property sequence_number) {
@@ -1608,7 +1703,7 @@ Function Get-NSXTDistFirewall {
                             Write-Host -ForegroundColor Red "`nFailed to retrieve Source Group Rule mappings`n"
                             break
                         }
-                        $group = ($requests.Content | ConvertFrom-Json)
+                        $group = ($requests.Content | ConvertFrom-Json -AsHashtable)
                         $source += $group.display_name
                     }
                 }
@@ -1634,7 +1729,7 @@ Function Get-NSXTDistFirewall {
                             Write-Host -ForegroundColor Red "`nFailed to retireve Destination Group Rule mappings`n"
                             break
                         }
-                        $group = ($requests.Content | ConvertFrom-Json)
+                        $group = ($requests.Content | ConvertFrom-Json -AsHashtable)
                         $destination += $group.display_name
                     }
                 }
@@ -1660,7 +1755,7 @@ Function Get-NSXTDistFirewall {
                             Write-Host -ForegroundColor Red "`nFailed to retrieve Services Rule mappings`n"
                             break
                         }
-                        $group = ($requests.Content | ConvertFrom-Json)
+                        $group = ($requests.Content | ConvertFrom-Json -AsHashtable)
                         $service += $group.display_name
                     }
                 }
@@ -1791,7 +1886,7 @@ Function New-NSXTDistFirewall {
 
         if($requests.StatusCode -eq 200) {
             Write-Host "Successfully created new NSX-T Distributed Firewall Rule $Name"
-            ($requests.Content | ConvertFrom-Json) | select display_name, id
+            ($requests.Content | ConvertFrom-Json -AsHashtable) | select display_name, id
         }
     }
 }
@@ -1925,7 +2020,7 @@ Function Get-NSXTRouteTable {
             if(!$SuppressConsoleOutput) {
                 Write-Host "Successfully retrieved NSX-T Routing Table`n"
             }
-            $routeTables = ($requests.Content | ConvertFrom-Json).results
+            $routeTables = ($requests.Content | ConvertFrom-Json -AsHashtable).results
 
             foreach ($routeTable in $routeTables) {
                 Write-Host "EdgeNode: $($routeTable.edge_node)"
@@ -2014,7 +2109,7 @@ If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection f
 
     if($requests.StatusCode -eq 200) {
         Write-Host "Successfully retrieved NSX-T Overview Information"
-        ($requests.Content | ConvertFrom-Json)
+        ($requests.Content | ConvertFrom-Json -AsHashtable)
     }
 }
 }
@@ -2070,7 +2165,7 @@ Function Get-NSXTInfraScope {
         }
 
         if($requests.StatusCode -eq 200) {
-            $infraLables = ($requests.Content | ConvertFrom-Json).results
+            $infraLables = ($requests.Content | ConvertFrom-Json -AsHashtable).results
 
             if ($PSBoundParameters.ContainsKey("Name")){
                 $infraLables = $infraLables | where {$_.display_name -eq $Name}
@@ -2080,7 +2175,7 @@ Function Get-NSXTInfraScope {
             foreach ($infraLabel in $infraLables) {
                 $tmp = [pscustomobject] @{
                     Name = $infraLabel.display_name;
-                    Id = $infraLabel.Id;
+                    Id = $infraLabel.id;
                     Path = $infraLabel.Path;
                 }
                 $results+=$tmp
@@ -2141,7 +2236,7 @@ Function Get-NSXTInfraGroup {
         }
 
         if($requests.StatusCode -eq 200) {
-            $groups = ($requests.Content | ConvertFrom-Json).results
+            $groups = ($requests.Content | ConvertFrom-Json -AsHashtable).results
 
             if ($PSBoundParameters.ContainsKey("Name")){
                 $groups = $groups | where {$_.display_name -eq $Name}
@@ -2342,7 +2437,7 @@ Function New-NSXTRouteBasedVPN {
 
                 if($requests.StatusCode -eq 200) {
                     Write-Host "Successfully created Route Based VPN"
-                    ($requests.Content | ConvertFrom-Json)
+                    ($requests.Content | ConvertFrom-Json -AsHashtable)
                 }
             }
         }
@@ -2400,7 +2495,7 @@ Function Get-NSXTRouteBasedVPN {
         }
 
         if($requests.StatusCode -eq 200) {
-            $groups = ($requests.Content | ConvertFrom-Json).results
+            $groups = ($requests.Content | ConvertFrom-Json -AsHashtable).results
             if ($PSBoundParameters.ContainsKey("Name")){
                 $groups = $groups | where {$_.display_name -eq $Name}
             }
@@ -2642,7 +2737,7 @@ Twitter:       @lamw
 
         if($requests.StatusCode -eq 200) {
             Write-Host "Successfully created Policy Based VPN"
-            ($requests.Content | ConvertFrom-Json)
+            ($requests.Content | ConvertFrom-Json -AsHashtable)
         }
     }
 }
@@ -2698,7 +2793,7 @@ Twitter:       @lamw
         }
 
         if($requests.StatusCode -eq 200) {
-            $groups = ($requests.Content | ConvertFrom-Json).results
+            $groups = ($requests.Content | ConvertFrom-Json -AsHashtable).results
             if ($PSBoundParameters.ContainsKey("Name")){
                 $groups = $groups | where {$_.display_name -eq $Name}
             }
@@ -2840,7 +2935,7 @@ Function Get-NSXTDNS {
         }
 
         if($requests.StatusCode -eq 200) {
-            $dnsZone = ($requests.Content | ConvertFrom-Json)
+            $dnsZone = ($requests.Content | ConvertFrom-Json -AsHashtable)
 
             $results = [pscustomobject] @{
                 Name = $dnsZone.display_name;
@@ -2949,7 +3044,7 @@ Function Get-NSXTPublicIP {
         }
 
         if($requests.StatusCode -eq 200) {
-            $results = ($requests.Content | ConvertFrom-Json).results | select display_name,id,ip
+            $results = ($requests.Content | ConvertFrom-Json -AsHashtable).results | select display_name,id,ip
 
             if ($PSBoundParameters.ContainsKey("Name")){
                 $results | where {$_.display_name -eq $Name}
@@ -3000,7 +3095,7 @@ Function New-NSXTPublicIP {
 
         if($requests.StatusCode -eq 200) {
             Write-Host "Successfully requested new NSX-T Public IP Address"
-            ($requests.Content | ConvertFrom-Json) | select display_name,id,ip
+            ($requests.Content | ConvertFrom-Json -AsHashtable) | select display_name,id,ip
         }
     }
 }
@@ -3074,7 +3169,7 @@ Function Get-NSXTNatRule {
         }
 
         if($requests.StatusCode -eq 200) {
-            $results = ($requests.Content | ConvertFrom-Json).results | select id,display_name,sequence_number,source_network,translated_network,destination_network,translated_ports,service,scope
+            $results = ($requests.Content | ConvertFrom-Json -AsHashtable).results | select id,display_name,sequence_number,source_network,translated_network,destination_network,translated_ports,service,scope
 
             if ($PSBoundParameters.ContainsKey("Name")){
                 $results | where {$_.display_name -eq $Name}
@@ -3157,7 +3252,7 @@ Function New-NSXTNatRule {
 
         if($requests.StatusCode -eq 200) {
             Write-Host "Successfully create new NAT Rule"
-            ($requests.Content | ConvertFrom-Json) | select id,display_name,sequence_number,source_network,translated_network,destination_network,translated_ports,service,scope
+            ($requests.Content | ConvertFrom-Json -AsHashtable) | select id,display_name,sequence_number,source_network,translated_network,destination_network,translated_ports,service,scope
         }
     }
 }
@@ -3237,7 +3332,7 @@ Function Get-NSXTT0Stats {
         }
 
         if($requests.StatusCode -eq 200) {
-            $t0Interfaces = ($requests.Content | ConvertFrom-Json).results.id
+            $t0Interfaces = ($requests.Content | ConvertFrom-Json -AsHashtable).results.id
         }
 
         ## Retrieve Edge Cluster
@@ -3265,7 +3360,7 @@ Function Get-NSXTT0Stats {
         }
 
         if($requests.StatusCode -eq 200) {
-            $edgeClusterId = ($requests.Content | ConvertFrom-Json).results.id
+            $edgeClusterId = ($requests.Content | ConvertFrom-Json -AsHashtable).results.id
         }
 
         # Retrieve the two Edge Nodes within Edge Cluster
@@ -3293,7 +3388,7 @@ Function Get-NSXTT0Stats {
         }
 
         if($requests.StatusCode -eq 200) {
-            $edgeNodes = (($requests.Content | ConvertFrom-Json).results).id
+            $edgeNodes = (($requests.Content | ConvertFrom-Json -AsHashtable).results).id
         }
 
         ## Iterate through both Edges since we can't tell which is the active edge and retrieve stats for each Tier-1 interface.
@@ -3311,7 +3406,7 @@ Function Get-NSXTT0Stats {
 
                 $interfaceName = $interface.Substring(0, $interface.Length - 2)
                 if($interfaceStats[$interfaceName]) {
-                    $tmpStats = ((Invoke-WebRequest -Uri $tmpUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck).Content | ConvertFrom-Json).per_node_statistics
+                    $tmpStats = ((Invoke-WebRequest -Uri $tmpUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck).Content | ConvertFrom-Json -AsHashtable).per_node_statistics
                     $currentStats = $interfaceStats[$interfaceName]
 
                     $tmp = [pscustomobject][ordered] @{
@@ -3325,7 +3420,7 @@ Function Get-NSXTT0Stats {
 
                     $interfaceStats[$interfaceName] = $tmp
                 } else {
-                    $tmpStats = ((Invoke-WebRequest -Uri $tmpUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck).Content | ConvertFrom-Json).per_node_statistics
+                    $tmpStats = ((Invoke-WebRequest -Uri $tmpUrl -Method $method -Headers $global:nsxtProxyConnection.headers -SkipCertificateCheck).Content | ConvertFrom-Json -AsHashtable).per_node_statistics
 
                     $tmp = [pscustomobject][ordered] @{
                         rx_total_bytes = $tmpStats.rx.total_bytes;
@@ -3384,7 +3479,7 @@ Function Get-NSXTLinkedVpc {
         }
 
         if($requests.StatusCode -eq 200) {
-            ($requests.Content | ConvertFrom-Json).results
+            ($requests.Content | ConvertFrom-Json -AsHashtable).results
         }
     }
 }
@@ -3420,7 +3515,7 @@ Function Get-NSXTL2VPN {
         }
 
         if($requests.StatusCode -eq 200) {
-            ($requests.Content | ConvertFrom-Json).results | Select display_name, id, path
+            ($requests.Content | ConvertFrom-Json -AsHashtable).results | Select display_name, id, path
         }
     }
 }
@@ -3456,7 +3551,7 @@ Function Get-NSXTPortMirror {
         }
 
         if($requests.StatusCode -eq 200) {
-            ($requests.Content | ConvertFrom-Json).results
+            ($requests.Content | ConvertFrom-Json -AsHashtable).results
         }
     }
 }
@@ -3492,7 +3587,7 @@ Function Get-NSXTIPFIXCollector {
         }
 
         if($requests.StatusCode -eq 200) {
-            ($requests.Content | ConvertFrom-Json).results
+            ($requests.Content | ConvertFrom-Json -AsHashtable).results
         }
     }
 }
@@ -3528,7 +3623,7 @@ Function Get-NSXTDirectConnectVIF {
         }
 
         if($requests.StatusCode -eq 200) {
-            ($requests.Content | ConvertFrom-Json).results
+            ($requests.Content | ConvertFrom-Json -AsHashtable).results
         }
     }
 }
@@ -3564,7 +3659,7 @@ Function Get-NSXTVifPerHost {
         }
 
         if($requests.StatusCode -eq 200) {
-            $vifs = ($requests.Content | ConvertFrom-Json).results
+            $vifs = ($requests.Content | ConvertFrom-Json -AsHashtable).results
 
             $vifToHostMapping = @{}
             foreach ($vif in $vifs) {
@@ -3611,7 +3706,7 @@ Function Get-NSXTVM {
         }
 
         if($requests.StatusCode -eq 200) {
-            $vms = ($requests.Content | ConvertFrom-Json).results
+            $vms = ($requests.Content | ConvertFrom-Json -AsHashtable).results
 
             $vmResult = @()
             foreach ($vm in $vms) {
@@ -3659,7 +3754,7 @@ Function Get-NSXTSegmentPort {
         }
 
         if($requests.StatusCode -eq 200) {
-            ($requests.Content | ConvertFrom-Json).results
+            ($requests.Content | ConvertFrom-Json -AsHashtable).results
         }
     }
 }
@@ -3703,7 +3798,7 @@ Function Get-NSXTGroupMember {
         }
 
         if($requests.StatusCode -eq 200) {
-            ($requests.Content | ConvertFrom-Json).results
+            ($requests.Content | ConvertFrom-Json -AsHashtable).results
         }
     }
 }
@@ -3765,7 +3860,7 @@ Function Get-NSXTSegmentStatsbyT1 {
             }
 
             if($requests.StatusCode -eq 200) {
-                $segments = (($requests.Content | ConvertFrom-Json).results).id
+                $segments = (($requests.Content | ConvertFrom-Json -AsHashtable).results).id
             }
 
             $RxTotalBytes = 0
@@ -3796,8 +3891,8 @@ Function Get-NSXTSegmentStatsbyT1 {
                 }
                 
                 if($requests.StatusCode -eq 200) {
-                    $RxTotalBytes += ($requests.Content | ConvertFrom-Json).rx_bytes.total
-                    $TxTotalBytes += ($requests.Content | ConvertFrom-Json).tx_bytes.total
+                    $RxTotalBytes += ($requests.Content | ConvertFrom-Json -AsHashtable).rx_bytes.total
+                    $TxTotalBytes += ($requests.Content | ConvertFrom-Json -AsHashtable).tx_bytes.total
                 }
             }
 
@@ -3832,11 +3927,11 @@ Function Get-NSXTSegmentStatsbyT1 {
             }
 
             if($requests.StatusCode -eq 200) {
-                if(($requests.Content | ConvertFrom-Json).result_count -eq 0) {
+                if(($requests.Content | ConvertFrom-Json -AsHashtable).result_count -eq 0) {
                     Write-Host -ForegroundColor Red "`nThe $Tier1Gateway NSX-T Tier-1 Gateway does not exist.`n"
                     break
                 } else {
-                    $tier1id = ($requests.Content | ConvertFrom-Json).results.id
+                    $tier1id = ($requests.Content | ConvertFrom-Json -AsHashtable).results.id
                 }   
             }
 
@@ -3865,7 +3960,7 @@ Function Get-NSXTSegmentStatsbyT1 {
             }
 
             if($requests.StatusCode -eq 200) {
-                $segments = (($requests.Content | ConvertFrom-Json).results).id
+                $segments = (($requests.Content | ConvertFrom-Json -AsHashtable).results).id
             }
 
             $RxTotalBytes = 0
@@ -3896,8 +3991,8 @@ Function Get-NSXTSegmentStatsbyT1 {
                 }
                 
                 if($requests.StatusCode -eq 200) {
-                    $RxTotalBytes += ($requests.Content | ConvertFrom-Json).rx_bytes.total
-                    $TxTotalBytes += ($requests.Content | ConvertFrom-Json).tx_bytes.total
+                    $RxTotalBytes += ($requests.Content | ConvertFrom-Json -AsHashtable).rx_bytes.total
+                    $TxTotalBytes += ($requests.Content | ConvertFrom-Json -AsHashtable).tx_bytes.total
                 }
                 
             }
