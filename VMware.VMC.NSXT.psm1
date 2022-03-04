@@ -1293,6 +1293,7 @@ Function Get-NSXTServiceDefinition {
                 $serviceProtocol = $serviceEntry.l4_protocol
                 $serviceSourcePorts = $serviceEntry.source_ports
                 $serviceDestinationPorts = $serviceEntry.destination_ports
+                $serviceNames = $serviceEntry.display_name
 
                 $tmp = [pscustomobject] @{
                     Name = $service.display_name;
@@ -1300,6 +1301,7 @@ Function Get-NSXTServiceDefinition {
                     Protocol = $serviceProtocol;
                     Source = $serviceSourcePorts;
                     Destination = $serviceDestinationPorts;
+                    Services = $serviceNames;
                     Path = $service.path;
                 }
                 $results += $tmp
