@@ -1382,23 +1382,36 @@ Function New-NSXTServiceDefinition {
         This cmdlet creates a new NSX-T Service
     .EXAMPLE
         New-NSXTServiceDefinition -Name "MyHTTP2" -Protocol TCP -DestinationPorts @("8080","8081")
+        New-NSXTServiceDefinition -Name "MyHTTP2" -Service @("HTTP","HTTPS")
 #>
+    [CmdletBinding(DefaultParameterSetName = 'Protocol')]
     Param (
         [Parameter(Mandatory=$True)]$Name,
-        [Parameter(Mandatory=$True)][String[]]$DestinationPorts,
-        [Parameter(Mandatory=$True)][ValidateSet("TCP","UDP")][String]$Protocol,
+        [Parameter(Mandatory=$True, ParameterSetName = 'Protocol')][String[]]$DestinationPorts,
+        [Parameter(Mandatory=$True, ParameterSetName = 'Protocol')][ValidateSet("TCP","UDP")][String]$Protocol,
+        [Parameter(Mandatory=$True, ParameterSetName = 'Service')][String[]]$ServiceNames,
         [Switch]$Troubleshoot
     )
 
     If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection  found, please use Connect-NSXTProxy" } Else {
         $serviceEntry = @()
-        $entry = @{
-            display_name = $name + "-$destinationPort"
-            resource_type = "L4PortSetServiceEntry";
-            destination_ports = @($DestinationPorts);
-            l4_protocol = $Protocol;
+        if ($PSCmdlet.ParameterSetName -eq 'Service') {
+            foreach ($Service in $ServiceNames) {
+                $entry = @{
+                    resource_type = "NestedServiceServiceEntry";
+                    nested_service_path = (Get-NSXTServiceDefinition $Service).Path;
+                }
+                $serviceEntry+=$entry
+            }
+        } else {
+            $entry = @{
+                display_name = $name + "-$destinationPort"
+                resource_type = "L4PortSetServiceEntry";
+                destination_ports = @($DestinationPorts);
+                l4_protocol = $Protocol;
+            }
+            $serviceEntry+=$entry
         }
-        $serviceEntry+=$entry
 
         $payload = @{
             display_name = $Name;
@@ -1985,14 +1998,14 @@ Function Get-NSXTRouteTable {
 
     If (-Not $global:nsxtProxyConnection) { Write-error "No NSX-T Proxy Connection found, please use Connect-NSXTProxy" } Else {
         $method = "GET"
-        
+
         # Check for SDDC version and account for API changes in NSX-T 2.5 introduced from VMC M9
         if ([int]$global:nsxtProxyConnection.sddcVersion.split(".")[1] -ge 9){
             $routeTableURL = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-0s/vmc/routing-table?enforcement_point_path=/infra/sites/default/enforcement-points/vmc-enforcementpoint"
         }else{
             $routeTableURL = $global:nsxtProxyConnection.Server + "/policy/api/v1/infra/tier-0s/vmc/routing-table?enforcement_point_path=/infra/tier-0s/vmc/routing-table?enforcement_point_path=/infra/sites/default/enforcement-points/vmc-enforcementpoint"
         }
-        
+
         if($RouteSource) {
             $routeTableURL = $routeTableURL + "&route_source=$RouteSource"
         }
@@ -2178,7 +2191,7 @@ Function Get-NSXTInfraScope {
                 $tmp = [pscustomobject] @{
                     Name = $infraLabel.display_name;
                     Id = $infraLabel.id;
-                    Path = $infraLabel.Path;
+                    Path = $infraLabel.path;
                 }
                 $results+=$tmp
             }
